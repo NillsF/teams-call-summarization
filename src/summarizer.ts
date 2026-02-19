@@ -1,5 +1,6 @@
 import { AzureOpenAI } from 'openai';
 import { config } from './config';
+import { getCognitiveAccessToken } from './entraAuth';
 import { logger } from './logger';
 
 const MINIMUM_TRANSCRIPT_LENGTH = 20;
@@ -37,7 +38,8 @@ const baseEndpoint = config.azureOpenAiEndpoint.replace(/\/openai\/.*$/, '');
 
 const client = new AzureOpenAI({
   endpoint: baseEndpoint,
-  apiKey: config.azureOpenAiApiKey,
+  apiKey: '',
+  azureADTokenProvider: getCognitiveAccessToken,
   apiVersion: '2025-04-01-preview',
   deployment: config.azureOpenAiDeploymentName,
 });
@@ -56,8 +58,7 @@ export async function summarizeTranscript(transcriptText: string): Promise<strin
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: transcriptText },
           ],
-          temperature: 0.3,
-          max_tokens: 1024,
+          max_completion_tokens: 1024,
         });
 
         const summary = response.choices[0]?.message?.content;

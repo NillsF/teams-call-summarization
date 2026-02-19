@@ -6,28 +6,85 @@ The bot operates cross-tenant — Azure resources (ACS, OpenAI, Bot Service) liv
 
 ## Architecture
 
-```
-Teams Meeting
-     │
-     ▼
-ACS joins meeting ──► Raw audio streamed via WebSocket
-                              │
-                              ▼
-                     Whisper transcribes audio (30 s chunks)
-                              │
-                              ▼
-                     GPT-5.2-chat summarizes transcript
-                              │
-                              ▼
-                     Bot posts summary to meeting chat
-                     (Bot Framework proactive messaging / UAMI)
+### POC Architecture (Current)
+
+```text
+Teams meeting
+    │
+    │ PSTN call-out
+    ▼
+ACS phone number
+    │
+    │ Event Grid: Microsoft.Communication.IncomingCall
+    ▼
+/api/eventgrid (Express)
+    │
+    │ answerCall + DTMF "1" on CallConnected
+    ▼
+ACS media streaming (wss://.../ws/audio, PCM16K mono)
+    │
+    │ every 30s: buffer → WAV
+    ▼
+Azure OpenAI Whisper (Microsoft Entra ID token)
+    │
+    ▼
+Transcript accumulator (per call)
+    │
+    │ every SUMMARY_INTERVAL_MINUTES (default: 5 min)
+    ▼
+GPT-5.2-chat summarizer (Microsoft Entra ID token)
+    │
+    ├──► Demo UI (SSE: live transcript + summaries)
+    └──► Optional Teams chat post (Adaptive Card via proactive bot messaging)
 ```
 
-1. A user pastes a Teams meeting join URL into the bot chat.
-2. ACS Call Automation joins the meeting and begins streaming raw PCM audio over a WebSocket.
-3. Every 30 seconds the audio buffer is converted to WAV and sent to Azure OpenAI Whisper for transcription.
-4. At a configurable interval (default 5 minutes), the accumulated transcript is sent to GPT-5.2-chat which produces a bullet-point summary.
-5. The summary is posted back to the meeting chat as an Adaptive Card via Bot Framework proactive messaging.
+- Teams calls out to the ACS PSTN number; ACS emits an `IncomingCall` Event Grid event to `/api/eventgrid`.
+- The service answers with Call Automation, then sends DTMF tone `1` after `CallConnected` to pass the Teams IVR join prompt.
+- ACS streams mixed audio to `/ws/audio`; the scheduler transcribes buffered audio every **30 seconds**.
+- Transcript chunks are accumulated and summarized every `SUMMARY_INTERVAL_MINUTES` (**default: 5 minutes**) using GPT-5.2-chat.
+- Summaries are always sent to the demo UI and posted to Teams chat when a valid conversation reference is available.
+- Whisper and GPT requests use Microsoft Entra ID bearer tokens acquired at runtime.
+
+### Production Architecture (Target on Azure)
+
+```text
+Teams client/user
+      │
+      ▼
+Microsoft Teams platform
+      │
+      ▼
+Azure Bot Service (Teams channel)
+      │  /api/messages + proactive chat posts
+      ▼
+Azure Container Apps (meeting-summarizer runtime)
+      ├─ ACS call control/audio capture ───────► Azure Communication Services
+      │                                           │
+      │                                           └─ Call events ─► Event Grid ─► ACA callback endpoint
+      ├─ Transcription ─────────────────────────► Azure OpenAI (Whisper deployment)
+      ├─ Summarization ─────────────────────────► Azure OpenAI (GPT deployment)
+      ├─ Secret/config resolution (MI) ─────────► Azure Key Vault
+      └─ Logs/traces/metrics ───────────────────► Application Insights + Log Analytics
+```
+
+#### Required Azure Services (Production)
+
+| Service | Responsibility |
+|---|---|
+| **Azure Container Apps (ACA)** | Runs the bot API, ACS callbacks, audio processing, and summary orchestration with autoscaling. |
+| **Azure Bot Service (Teams channel)** | Connects Teams messages/events to the bot endpoint and supports proactive chat posting. |
+| **Azure Communication Services (Call Automation)** | Joins Teams meetings and provides media/call event hooks used by the app runtime. |
+| **Azure Event Grid** | Delivers ACS lifecycle events to ACA callback endpoints reliably. |
+| **Azure OpenAI (Whisper + GPT deployments)** | Whisper handles speech-to-text; GPT generates periodic meeting summaries. |
+| **Azure Key Vault** | Central store for secrets/keys/certificates, accessed from ACA via managed identity. |
+| **Application Insights + Log Analytics** | Centralized telemetry, diagnostics, and alerting for runtime and integration health. |
+
+#### Production Posture (High Level)
+
+- Use **managed identity** for ACA-to-Key Vault and other Azure resource access; avoid long-lived credentials where possible.
+- Keep all sensitive configuration in **Key Vault** and reference secrets from ACA revisions; rotate secrets centrally.
+- Keep ACA **public ingress** enabled only for required callback paths (Bot/ACS/Event Grid) over HTTPS, with strict request validation.
+- Configure **scaling/reliability** with minimum replicas for warm start, autoscale rules, health probes, and Event Grid retry handling.
 
 ## Prerequisites
 

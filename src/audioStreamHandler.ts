@@ -1,27 +1,12 @@
 import * as http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { StreamingData, type AudioData, type AudioMetadata } from '@azure/communication-call-automation';
 import { logger } from './logger';
 
-// Per-call audio buffer: serverCallId -> array of PCM chunks
+// Global audio buffer: single buffer for all incoming audio (one call at a time)
+// Keyed by a connection identifier derived from the WebSocket
+let activeConnectionId = '';
 const audioBuffers = new Map<string, Buffer[]>();
-
-interface AcsAudioData {
-  kind: 'AudioData';
-  audioData: {
-    data: string;
-    timestamp: string;
-    participantRawID: string;
-    silent: boolean;
-  };
-  serverCallId: string;
-}
-
-interface AcsAudioMetadata {
-  kind: 'AudioMetadata';
-  [key: string]: unknown;
-}
-
-type AcsMediaMessage = AcsAudioData | AcsAudioMetadata;
 
 /**
  * Creates a WebSocket server attached to an existing HTTP server
@@ -31,36 +16,42 @@ export function createAudioStreamServer(server: http.Server, path: string): WebS
   const wss = new WebSocketServer({ server, path });
 
   wss.on('connection', (ws: WebSocket) => {
-    logger.info({ path }, 'WebSocket connection established');
+    const connId = `ws-${Date.now()}`;
+    activeConnectionId = connId;
+    audioBuffers.set(connId, []);
+    logger.info({ path, connId }, 'WebSocket connection established');
 
     ws.on('message', (data: Buffer | string) => {
       try {
-        const message: AcsMediaMessage = JSON.parse(
-          typeof data === 'string' ? data : data.toString('utf-8')
-        );
+        const raw = typeof data === 'string' ? data : data.toString('utf-8');
+        const parsed = StreamingData.parse(raw);
+        const kind = StreamingData.getStreamingKind();
 
-        if (message.kind === 'AudioMetadata') {
-          logger.debug('Received AudioMetadata, ignoring');
+        if (kind === 'AudioMetadata') {
+          const meta = parsed as AudioMetadata;
+          logger.info({ connId, encoding: meta.encoding, sampleRate: meta.sampleRate, channels: meta.channels }, 'Audio metadata received');
           return;
         }
 
-        if (message.kind === 'AudioData') {
-          const { serverCallId, audioData } = message as AcsAudioData;
+        if (kind === 'AudioData') {
+          const audio = parsed as AudioData;
 
-          if (audioData.silent) {
+          if (audio.isSilent) {
             return;
           }
 
-          const pcmBuffer = Buffer.from(audioData.data, 'base64');
+          const pcmBuffer = Buffer.from(audio.data, 'base64');
 
-          if (!audioBuffers.has(serverCallId)) {
-            audioBuffers.set(serverCallId, []);
+          if (!audioBuffers.has(connId)) {
+            audioBuffers.set(connId, []);
           }
-          audioBuffers.get(serverCallId)!.push(pcmBuffer);
+          audioBuffers.get(connId)!.push(pcmBuffer);
 
-          const chunks = audioBuffers.get(serverCallId)!;
+          const chunks = audioBuffers.get(connId)!;
           const totalBytes = chunks.reduce((sum, b) => sum + b.length, 0);
-          logger.debug({ serverCallId, bytes: pcmBuffer.length, totalBytes, chunks: chunks.length }, 'Buffered audio');
+          if (chunks.length % 100 === 0) {
+            logger.info({ connId, totalBytes, chunks: chunks.length }, 'Audio buffering progress');
+          }
         }
       } catch (err) {
         logger.error({ err }, 'Error parsing audio stream message');
@@ -68,11 +59,11 @@ export function createAudioStreamServer(server: http.Server, path: string): WebS
     });
 
     ws.on('close', () => {
-      logger.info('WebSocket connection closed');
+      logger.info({ connId }, 'WebSocket connection closed');
     });
 
     ws.on('error', (err: Error) => {
-      logger.error({ err }, 'WebSocket error');
+      logger.error({ err, connId }, 'WebSocket error');
     });
   });
 
@@ -80,26 +71,40 @@ export function createAudioStreamServer(server: http.Server, path: string): WebS
   return wss;
 }
 
-/** Returns concatenated audio buffer for a call and clears it. */
-export function getAndClearAudioBuffer(serverCallId: string): Buffer | null {
-  const chunks = audioBuffers.get(serverCallId);
+/** Returns concatenated audio buffer for a call and clears it.
+ *  Accepts serverCallId for API compat but uses the active WS connection. */
+export function getAndClearAudioBuffer(_serverCallId: string): Buffer | null {
+  // Try active connection first, then fall back to any buffer with data
+  const connId = activeConnectionId;
+  let chunks = audioBuffers.get(connId);
+  if (!chunks || chunks.length === 0) {
+    // Search all buffers
+    for (const [id, bufs] of audioBuffers) {
+      if (bufs.length > 0) {
+        chunks = bufs;
+        break;
+      }
+    }
+  }
   if (!chunks || chunks.length === 0) {
     return null;
   }
   const combined = Buffer.concat(chunks);
-  audioBuffers.set(serverCallId, []);
-  logger.debug({ serverCallId, bytes: combined.length }, 'Returned and cleared audio buffer');
+  chunks.length = 0; // clear in place
+  logger.info({ bytes: combined.length }, 'Returned and cleared audio buffer');
   return combined;
 }
 
 /** Check if there's buffered audio for a call. */
-export function hasAudioData(serverCallId: string): boolean {
-  const chunks = audioBuffers.get(serverCallId);
-  return !!chunks && chunks.length > 0;
+export function hasAudioData(_serverCallId: string): boolean {
+  for (const [, chunks] of audioBuffers) {
+    if (chunks.length > 0) return true;
+  }
+  return false;
 }
 
 /** Cleanup buffer when a call ends. */
-export function removeAudioBuffer(serverCallId: string): void {
-  audioBuffers.delete(serverCallId);
-  logger.info({ serverCallId }, 'Removed audio buffer');
+export function removeAudioBuffer(_serverCallId: string): void {
+  audioBuffers.clear();
+  logger.info('Removed all audio buffers');
 }

@@ -24,11 +24,11 @@ export const config = {
 
   // Azure OpenAI - Whisper (speech-to-text)
   whisperEndpoint: required('WHISPER_ENDPOINT'),
-  whisperKey: required('WHISPER_KEY'),
+  whisperKey: optional('WHISPER_KEY', ''),
 
   // Azure OpenAI - GPT (summarization)
   azureOpenAiEndpoint: required('AZURE_OPENAI_ENDPOINT'),
-  azureOpenAiApiKey: required('AZURE_OPENAI_API_KEY'),
+  azureOpenAiApiKey: optional('AZURE_OPENAI_API_KEY', ''),
   azureOpenAiDeploymentName: required('AZURE_OPENAI_DEPLOYMENT_NAME'),
 
   // App config

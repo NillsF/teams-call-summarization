@@ -1,16 +1,28 @@
 import { config } from './config';
+import { getCognitiveAccessToken } from './entraAuth';
 import { logger } from './logger';
 
 const MIN_AUDIO_BYTES = 32000; // 1 second at 16kHz, 16-bit mono
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
-
 function isTransientError(status: number): boolean {
   return status >= 500 || status === 429;
 }
 
 async function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callWhisper(formData: FormData): Promise<Response> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${await getCognitiveAccessToken()}`,
+  };
+
+  return fetch(config.whisperEndpoint, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
 }
 
 /** Creates a WAV file buffer from raw PCM data. */
@@ -68,22 +80,16 @@ export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const response = await fetch(config.whisperEndpoint, {
-          method: 'POST',
-          headers: {
-            'api-key': config.whisperKey,
-          },
-          body: formData,
-        });
+        const response = await callWhisper(formData);
+        const responseText = !response.ok ? await response.text() : '';
 
         if (!response.ok) {
-          const errorText = await response.text();
           if (isTransientError(response.status) && attempt < MAX_RETRIES) {
             logger.warn({ status: response.status, attempt }, 'Whisper API transient error, retrying');
             await delay(RETRY_DELAY_MS);
             continue;
           }
-          logger.error({ status: response.status, errorText }, 'Whisper API error');
+          logger.error({ status: response.status, errorText: responseText }, 'Whisper API error');
           return '';
         }
 

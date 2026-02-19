@@ -42,7 +42,8 @@ app.post('/api/eventgrid', async (req, res) => {
       logger.info({ from: event.data?.from, to: event.data?.to }, 'Incoming call received');
       
       try {
-        const result = await answerIncomingCall(incomingCallContext);
+        const callerPhone = event.data?.from?.phoneNumber?.value;
+        const result = await answerIncomingCall(incomingCallContext, callerPhone);
         const meetingId = `call-${result.callConnectionId}`;
         
         // Auto-start the scheduler for this call
@@ -102,7 +103,7 @@ app.post('/api/demo/join', async (req, res) => {
 
 // Stop a demo meeting
 app.post('/api/demo/stop', (req, res) => {
-  const { meetingId } = req.body;
+  const meetingId = req.body?.meetingId as string | undefined;
   if (meetingId) {
     meetingScheduler.stopMeeting(meetingId);
     broadcastEvent(meetingId, { type: 'status', data: 'Stopped', timestamp: new Date().toISOString() });
