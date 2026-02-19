@@ -5,6 +5,7 @@ import { getAndClearAudioBuffer, hasAudioData, removeAudioBuffer } from './audio
 import { transcribeAudio, transcriptAccumulator } from './transcriber';
 import { summarizeTranscript } from './summarizer';
 import { postSummaryToChat } from './chatPoster';
+import { broadcastEvent } from './demoSse';
 
 interface ActiveMeeting {
   conversationId: string;
@@ -94,6 +95,7 @@ export class MeetingScheduler {
     const text = await transcribeAudio(audioBuffer);
     if (text) {
       transcriptAccumulator.append(conversationId, text);
+      broadcastEvent(conversationId, { type: 'transcript', data: text, timestamp: new Date().toISOString() });
       logger.info({ conversationId, chars: text.length }, 'Transcribed audio');
     }
   }
@@ -110,7 +112,13 @@ export class MeetingScheduler {
 
     logger.info({ conversationId, chars: transcriptText.length }, 'Summarizing transcript');
     const summary = await summarizeTranscript(transcriptText);
-    await postSummaryToChat(conversationReference, summary, config.summaryIntervalMinutes);
+    broadcastEvent(conversationId, { type: 'summary', data: summary, timestamp: new Date().toISOString() });
+    // Try posting to Teams chat (may fail if bot isn't installed in a chat)
+    try {
+      await postSummaryToChat(conversationReference, summary, config.summaryIntervalMinutes);
+    } catch {
+      logger.warn({ conversationId }, 'Could not post to Teams chat (demo mode)');
+    }
     logger.info({ conversationId }, 'Posted summary');
   }
 }

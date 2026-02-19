@@ -10,7 +10,6 @@ import { logger } from './logger';
 
 const botFrameworkAuth = new ConfigurationBotFrameworkAuthentication({
   MicrosoftAppId: config.microsoftAppId,
-  MicrosoftAppPassword: config.microsoftAppPassword,
   MicrosoftAppTenantId: config.microsoftAppTenantId,
   MicrosoftAppType: 'UserAssignedMsi',
 });

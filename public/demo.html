@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meeting Summarizer — Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+    .container { max-width: 1060px; margin: 0 auto; padding: 24px; }
+    h1 { color: #7b7ff6; margin-bottom: 8px; font-size: 24px; }
+    .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; }
+
+    /* Status bar */
+    .status-bar { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-radius: 8px; background: #16213e; border: 1px solid #333; margin-bottom: 20px; font-size: 13px; flex-wrap: wrap; }
+    .status-bar .sse-status { display: flex; align-items: center; gap: 6px; }
+    .status-bar .sse-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; flex-shrink: 0; }
+    .status-bar .sse-dot.connected { background: #4ade80; }
+    .status-bar .sse-dot.error { background: #f87171; }
+    .status-bar .active-calls { color: #888; }
+    .status-bar .active-calls span { color: #7b7ff6; font-weight: 600; }
+
+    /* Phone card */
+    .phone-card { background: #16213e; border: 1px solid #333; border-radius: 12px; padding: 24px; margin-bottom: 20px; text-align: center; }
+    .phone-card .phone-number { font-size: 32px; font-weight: 700; color: #7b7ff6; letter-spacing: 1px; margin-bottom: 8px; }
+    .phone-card .instructions { color: #999; font-size: 14px; line-height: 1.6; max-width: 500px; margin: 0 auto 16px; }
+    .phone-card .call-status { display: inline-flex; align-items: center; gap: 8px; padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 500; }
+    .phone-card .call-status.waiting { background: #1a2a3e; border: 1px solid #2d4a6f; color: #7bb8f6; }
+    .phone-card .call-status.connected { background: #1a3a2a; border: 1px solid #2d6a4f; color: #4ade80; }
+    .phone-card .call-status .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .phone-card .call-status.waiting .status-dot { background: #7bb8f6; animation: pulse 2s infinite; }
+    .phone-card .call-status.connected .status-dot { background: #4ade80; animation: pulse 2s infinite; }
+
+    /* Buttons */
+    .btn { padding: 10px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .btn-stop { background: #c74a4a; color: white; margin-top: 12px; }
+    .btn-stop:hover { background: #b33a3a; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Status message */
+    .status-msg { padding: 8px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; display: none; }
+    .status-msg.active { display: block; background: #1a3a2a; border: 1px solid #2d6a4f; color: #95d5b2; }
+    .status-msg.error { display: block; background: #3a1a1a; border: 1px solid #6a2d2d; color: #d59595; }
+
+    /* Panels */
+    .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .panel { background: #16213e; border: 1px solid #333; border-radius: 12px; padding: 16px; min-height: 400px; display: flex; flex-direction: column; }
+    .panel h2 { font-size: 16px; color: #7b7ff6; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .panel h2 .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; flex-shrink: 0; }
+    .panel h2 .dot.live { background: #4ade80; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .content { flex: 1; overflow-y: auto; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+    .transcript-chunk { padding: 8px; margin-bottom: 4px; border-radius: 6px; background: #1a1a2e; }
+    .transcript-chunk .time { color: #666; font-size: 11px; }
+    .summary-card { background: #1a2a3e; border: 1px solid #2d4a6f; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+    .summary-card h3 { color: #7bb8f6; font-size: 14px; margin-bottom: 4px; }
+    .summary-card .time { color: #666; font-size: 11px; }
+    .summary-card .text { margin-top: 8px; }
+    .empty { color: #555; font-style: italic; text-align: center; margin-top: 40px; }
+    @media (max-width: 768px) {
+      .panels { grid-template-columns: 1fr; }
+      .phone-card .phone-number { font-size: 24px; }
+      .status-bar { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📋 Meeting Summarizer</h1>
+    <p class="subtitle">Add the bot to your Teams meeting — it auto-answers and transcribes with AI-powered summaries</p>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="sse-status">
+        <span class="sse-dot" id="sseDot"></span>
+        <span id="sseLabel">Connecting...</span>
+      </div>
+      <div class="active-calls">Active calls: <span id="activeCalls">0</span></div>
+    </div>
+
+    <!-- Phone card -->
+    <div class="phone-card">
+      <div class="phone-number">+1 (844) 551-2798</div>
+      <div class="instructions">Add this number as a participant in your Teams meeting.<br>The bot will auto-answer and start transcribing.</div>
+      <div class="call-status waiting" id="callStatus">
+        <span class="status-dot"></span>
+        <span id="callStatusLabel">Waiting for incoming call...</span>
+      </div>
+      <br>
+      <button class="btn btn-stop" id="stopBtn" onclick="stopCall()" style="display:none;">Stop Recording</button>
+    </div>
+
+    <div class="status-msg" id="statusMsg"></div>
+
+    <div class="panels">
+      <div class="panel">
+        <h2><span class="dot" id="transcriptDot"></span> Live Transcript</h2>
+        <div class="content" id="transcript">
+          <div class="empty">Waiting for audio...</div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2><span class="dot" id="summaryDot"></span> Summaries</h2>
+        <div class="content" id="summaries">
+          <div class="empty">Summaries appear every few minutes</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentMeetingId = null;
+    let globalSSE = null;
+    let meetingSSE = null;
+    let statusPollTimer = null;
+
+    // --- Helpers ---
+
+    function setStatusMsg(msg, isError) {
+      const el = document.getElementById('statusMsg');
+      el.textContent = msg;
+      el.className = 'status-msg ' + (isError ? 'error' : 'active');
+    }
+
+    function formatTime(ts) {
+      return new Date(ts).toLocaleTimeString();
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function setSseStatus(connected) {
+      const dot = document.getElementById('sseDot');
+      const label = document.getElementById('sseLabel');
+      if (connected) {
+        dot.className = 'sse-dot connected';
+        label.textContent = 'SSE Connected';
+      } else {
+        dot.className = 'sse-dot error';
+        label.textContent = 'SSE Disconnected';
+      }
+    }
+
+    function setCallConnected(meetingId) {
+      currentMeetingId = meetingId;
+      const cs = document.getElementById('callStatus');
+      const label = document.getElementById('callStatusLabel');
+      cs.className = 'call-status connected';
+      label.textContent = 'Connected!';
+      document.getElementById('stopBtn').style.display = '';
+      document.getElementById('transcriptDot').classList.add('live');
+
+      // Clear panels for new call
+      document.getElementById('transcript').innerHTML = '';
+      document.getElementById('summaries').innerHTML = '';
+    }
+
+    function setCallWaiting() {
+      currentMeetingId = null;
+      const cs = document.getElementById('callStatus');
+      const label = document.getElementById('callStatusLabel');
+      cs.className = 'call-status waiting';
+      label.textContent = 'Waiting for incoming call...';
+      document.getElementById('stopBtn').style.display = 'none';
+      document.getElementById('transcriptDot').classList.remove('live');
+      document.getElementById('summaryDot').classList.remove('live');
+    }
+
+    // --- SSE ---
+
+    function connectGlobalSSE() {
+      if (globalSSE) globalSSE.close();
+      globalSSE = new EventSource('/api/demo/events/global');
+
+      globalSSE.onopen = function() {
+        setSseStatus(true);
+      };
+
+      globalSSE.onmessage = function(e) {
+        var event;
+        try { event = JSON.parse(e.data); } catch (_) { return; }
+
+        switch (event.type) {
+          case 'call-answered':
+            setCallConnected(event.data.meetingId);
+            setStatusMsg('Call answered — transcribing...', false);
+            connectMeetingSSE(event.data.meetingId);
+            break;
+          case 'transcript':
+            appendTranscript(event.data, event.timestamp);
+            break;
+          case 'summary':
+            appendSummary(event.data, event.timestamp);
+            break;
+          case 'status':
+            setStatusMsg(event.data, false);
+            break;
+          case 'error':
+            setStatusMsg(event.data, true);
+            break;
+        }
+      };
+
+      globalSSE.onerror = function() {
+        setSseStatus(false);
+      };
+    }
+
+    function connectMeetingSSE(meetingId) {
+      if (meetingSSE) meetingSSE.close();
+      meetingSSE = new EventSource('/api/demo/events/' + encodeURIComponent(meetingId));
+
+      meetingSSE.onmessage = function(e) {
+        var event;
+        try { event = JSON.parse(e.data); } catch (_) { return; }
+
+        switch (event.type) {
+          case 'transcript':
+            appendTranscript(event.data, event.timestamp);
+            break;
+          case 'summary':
+            appendSummary(event.data, event.timestamp);
+            break;
+          case 'status':
+            setStatusMsg(event.data, false);
+            break;
+          case 'error':
+            setStatusMsg(event.data, true);
+            break;
+        }
+      };
+
+      meetingSSE.onerror = function() {
+        // Meeting stream lost; global stream is still the primary
+      };
+    }
+
+    // --- Transcript & Summary ---
+
+    function appendTranscript(text, timestamp) {
+      var el = document.getElementById('transcript');
+      if (el.querySelector('.empty')) el.innerHTML = '';
+      var chunk = document.createElement('div');
+      chunk.className = 'transcript-chunk';
+      chunk.innerHTML = '<span class="time">' + formatTime(timestamp) + '</span><br>' + escapeHtml(text);
+      el.appendChild(chunk);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function appendSummary(text, timestamp) {
+      var el = document.getElementById('summaries');
+      if (el.querySelector('.empty')) el.innerHTML = '';
+      document.getElementById('summaryDot').classList.add('live');
+      var card = document.createElement('div');
+      card.className = 'summary-card';
+      card.innerHTML = '<h3>📋 Summary</h3><span class="time">' + formatTime(timestamp) + '</span><div class="text">' + escapeHtml(text) + '</div>';
+      el.insertBefore(card, el.firstChild);
+    }
+
+    // --- Stop ---
+
+    async function stopCall() {
+      try {
+        await fetch('/api/demo/stop', { method: 'POST' });
+      } catch (_) { /* ignore */ }
+      if (meetingSSE) { meetingSSE.close(); meetingSSE = null; }
+      setCallWaiting();
+      setStatusMsg('Recording stopped', false);
+    }
+
+    // --- Status polling ---
+
+    async function pollStatus() {
+      try {
+        var res = await fetch('/api/demo/status');
+        if (res.ok) {
+          var data = await res.json();
+          document.getElementById('activeCalls').textContent = data.activeCalls != null ? data.activeCalls : 0;
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    // --- Init ---
+
+    connectGlobalSSE();
+    pollStatus();
+    statusPollTimer = setInterval(pollStatus, 5000);
+  </script>
+</body>
+</html>

@@ -5,7 +5,7 @@ import {
   parseCallAutomationEvent,
   type CallAutomationEvent,
   type MediaStreamingOptions,
-  type CreateCallOptions,
+  type AnswerCallOptions,
 } from '@azure/communication-call-automation';
 import { config } from './config';
 import { logger } from './logger';
@@ -19,13 +19,11 @@ export const activeCalls = new Map<
 >();
 
 /**
- * Join a Teams meeting by its join URL and start audio media streaming.
- * Uses createGroupCall with the meeting join URL encoded in the callback context.
+ * Answer an incoming call (from EventGrid IncomingCall event) and start audio media streaming.
  */
-export async function joinMeeting(
-  meetingJoinUrl: string,
-  serverCallId?: string,
-): Promise<{ callConnectionId: string }> {
+export async function answerIncomingCall(
+  incomingCallContext: string,
+): Promise<{ callConnectionId: string; serverCallId: string }> {
   const callbackUrl = config.callbackUri + '/api/callbacks';
   const wsUrl =
     config.callbackUri.replace(/^https:\/\//i, 'wss://').replace(/^http:\/\//i, 'ws://') +
@@ -40,33 +38,28 @@ export async function joinMeeting(
     audioFormat: 'Pcm16KMono',
   };
 
-  const createCallOptions: CreateCallOptions = {
-    operationContext: 'joinMeeting',
+  const options: AnswerCallOptions = {
     mediaStreamingOptions,
-    sourceDisplayName: 'Meeting Summarizer',
   };
 
-  // createGroupCall places an outbound group call; the ACS resource
-  // must be configured to route into the Teams meeting identified by
-  // meetingJoinUrl (e.g. via Teams interop / policy-based recording).
-  const callResult = await acsClient.createGroupCall(
-    [],
+  const callResult = await acsClient.answerCall(
+    incomingCallContext,
     callbackUrl,
-    createCallOptions,
+    options,
   );
 
   const props = callResult.callConnectionProperties;
   const callConnectionId = props.callConnectionId ?? '';
-  const resolvedServerCallId = props.serverCallId ?? serverCallId ?? '';
+  const serverCallId = props.serverCallId ?? '';
 
   activeCalls.set(callConnectionId, {
     callConnectionId,
-    serverCallId: resolvedServerCallId,
+    serverCallId,
   });
 
-  logger.info({ callConnectionId, serverCallId: resolvedServerCallId }, 'Joined meeting');
+  logger.info({ callConnectionId, serverCallId }, 'Answered incoming call');
 
-  return { callConnectionId };
+  return { callConnectionId, serverCallId };
 }
 
 /** Hang up a call by its callConnectionId. */
