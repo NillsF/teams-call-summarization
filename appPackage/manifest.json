@@ -1,0 +1,54 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "4d7815b3-3d1c-48f6-81f8-67f008389dad",
+  "developer": {
+    "name": "AEM Copilot",
+    "websiteUrl": "https://github.com",
+    "privacyUrl": "https://github.com",
+    "termsOfUseUrl": "https://github.com"
+  },
+  "name": {
+    "short": "Meeting Summarizer",
+    "full": "AEM Meeting Summarizer Bot"
+  },
+  "description": {
+    "short": "Summarizes meeting discussions every few minutes",
+    "full": "A Teams bot that joins meetings, captures audio, transcribes it using Azure OpenAI Whisper, and posts AI-generated summaries to the meeting chat at configurable intervals."
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#5B5FC7",
+  "bots": [
+    {
+      "botId": "4d7815b3-3d1c-48f6-81f8-67f008389dad",
+      "scopes": ["groupChat", "team"],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["groupChat"],
+          "commands": [
+            {
+              "title": "join",
+              "description": "Paste a Teams meeting link to start summarizing"
+            },
+            {
+              "title": "stop",
+              "description": "Stop summarizing the current meeting"
+            },
+            {
+              "title": "help",
+              "description": "Show help information"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": []
+}
