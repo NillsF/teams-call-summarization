@@ -36,13 +36,19 @@ Keep the summary brief and well-organized.`;
 // Extract base endpoint (remove path components if present)
 const baseEndpoint = config.azureOpenAiEndpoint.replace(/\/openai\/.*$/, '');
 
-const client = new AzureOpenAI({
-  endpoint: baseEndpoint,
-  apiKey: '',
-  azureADTokenProvider: getCognitiveAccessToken,
-  apiVersion: '2025-04-01-preview',
-  deployment: config.azureOpenAiDeploymentName,
-});
+function createOpenAIClient(): AzureOpenAI {
+  const baseOptions = {
+    endpoint: baseEndpoint,
+    apiVersion: '2025-04-01-preview',
+    deployment: config.azureOpenAiDeploymentName,
+  };
+  if (config.authMode === 'apikey') {
+    return new AzureOpenAI({ ...baseOptions, apiKey: config.azureOpenAiApiKey });
+  }
+  return new AzureOpenAI({ ...baseOptions, azureADTokenProvider: getCognitiveAccessToken });
+}
+
+const client = createOpenAIClient();
 
 export async function summarizeTranscript(transcriptText: string): Promise<string> {
   if (!transcriptText || transcriptText.trim().length < MINIMUM_TRANSCRIPT_LENGTH) {

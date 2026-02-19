@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { config } from './config';
+import { config, validateAuthConfig } from './config';
 import { logger } from './logger';
 import { MeetingSummarizerBot } from './bot';
 import { answerIncomingCall, handleCallbackEvent, activeCalls } from './callAutomation';
@@ -11,6 +11,7 @@ import { transcriptAccumulator } from './transcriber';
 import path from 'path';
 
 const app = express();
+validateAuthConfig();
 app.use(express.json());
 
 const bot = new MeetingSummarizerBot();

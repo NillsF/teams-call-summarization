@@ -37,4 +37,20 @@ export const config = {
 
   // Server
   port: parseInt(optional('PORT', '3978'), 10),
+
+  // Auth
+  authMode: optional('AZURE_AUTH_MODE', 'entra'),
 };
+
+export function validateAuthConfig(): void {
+  if (config.authMode === 'apikey') {
+    if (!config.whisperKey) {
+      throw new Error('WHISPER_KEY is required when AZURE_AUTH_MODE=apikey');
+    }
+    if (!config.azureOpenAiApiKey) {
+      throw new Error('AZURE_OPENAI_API_KEY is required when AZURE_AUTH_MODE=apikey');
+    }
+  } else if (config.authMode !== 'entra') {
+    throw new Error('AZURE_AUTH_MODE must be "entra" or "apikey"');
+  }
+}

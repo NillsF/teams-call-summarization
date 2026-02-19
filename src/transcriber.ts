@@ -14,9 +14,10 @@ async function delay(ms: number): Promise<void> {
 }
 
 async function callWhisper(formData: FormData): Promise<Response> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${await getCognitiveAccessToken()}`,
-  };
+  const headers: Record<string, string> =
+    config.authMode === 'apikey'
+      ? { 'api-key': config.whisperKey }
+      : { Authorization: `Bearer ${await getCognitiveAccessToken()}` };
 
   return fetch(config.whisperEndpoint, {
     method: 'POST',

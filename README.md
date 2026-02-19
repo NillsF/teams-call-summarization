@@ -144,6 +144,35 @@ npm run dev
 
 The server starts on port 3978.
 
+## Authentication Modes
+
+The app supports two ways to authenticate with Azure OpenAI (Whisper + GPT):
+
+| Mode | `AZURE_AUTH_MODE` | When to use |
+|------|-------------------|-------------|
+| Entra ID | `entra` (default) | Production / no API key needed. Uses the service principal from `MICROSOFT_APP_ID` / `MICROSOFT_APP_PASSWORD` / `MICROSOFT_APP_TENANT_ID` via client_credentials grant. The Azure AI Services resource must have **local auth disabled** (`disableLocalAuth=true`). |
+| API Key | `apikey` | Local dev / simple setup without a service principal. Set `WHISPER_KEY` and `AZURE_OPENAI_API_KEY`. |
+
+### Entra ID mode (default)
+
+No extra config needed — the app reuses the bot's service principal credentials (`MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT_ID`) to acquire a `https://cognitiveservices.azure.com/.default` token.
+
+Requirements:
+- The SP must have **Cognitive Services User** role on the Azure AI Services resource.
+- The resource must have `disableLocalAuth=true` (or keys simply left blank).
+
+### API Key mode
+
+Set `AZURE_AUTH_MODE=apikey` and populate both key fields:
+
+```env
+AZURE_AUTH_MODE=apikey
+WHISPER_KEY=<your-whisper-api-key>
+AZURE_OPENAI_API_KEY=<your-openai-api-key>
+```
+
+The server will refuse to start if either key is missing when this mode is selected.
+
 ## Sideloading the App
 
 1. Zip the contents of the `appPackage/` folder (`manifest.json`, `color.png`, `outline.png`):
